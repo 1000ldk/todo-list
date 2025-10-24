@@ -727,8 +727,8 @@ try {
                                 </button>
                             </form>
                             
-                            <!-- 編集フォーム（簡易版） -->
-                            <button onclick="editTodo(<?php echo htmlspecialchars(json_encode($todo)); ?>)" class="btn">編集</button>
+                            <!-- 編集（モーダルを開く） -->
+                            <button onclick="openEditModal(<?php echo htmlspecialchars(json_encode($todo)); ?>)" class="btn">編集</button>
                             
                             <!-- 削除 -->
                             <form method="POST" style="display: inline;" onsubmit="return confirm('本当に削除しますか？')">
@@ -802,6 +802,71 @@ try {
                 <button type="button" class="btn btn-outline" onclick="closeOptions()">閉じる</button>
             </div>
         </div>
+      </div>
+    </div>
+    
+    <!-- 編集モーダル（全項目一括編集） -->
+    <div id="edit-modal" class="modal-backdrop" onclick="backdropCloseEdit(event)" style="display:none;">
+      <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+        <div class="modal-header">
+          <h3 id="edit-title">ToDoを編集</h3>
+          <button type="button" class="modal-close" aria-label="閉じる" onclick="closeEditModal()">×</button>
+        </div>
+        <form method="POST" id="edit-form" class="filters-form">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="id" id="edit_id">
+            <input type="hidden" name="calculated_reminder_date" id="edit_calculated_reminder_date">
+
+            <div style="flex-basis:100%;">
+                <label for="edit_title">タイトル *</label>
+                <input type="text" id="edit_title" name="title" required>
+            </div>
+            <div style="flex-basis:100%;">
+                <label for="edit_description">詳細説明</label>
+                <textarea id="edit_description" name="description" rows="3"></textarea>
+            </div>
+            <div>
+                <label for="edit_priority">優先度</label>
+                <select id="edit_priority" name="priority">
+                    <option value="high">高</option>
+                    <option value="medium">中</option>
+                    <option value="low">低</option>
+                </select>
+            </div>
+            <div>
+                <label for="edit_due_date">締切日</label>
+                <input type="datetime-local" id="edit_due_date" name="due_date">
+            </div>
+            <div style="flex-basis:100%;">
+                <label for="edit_tags">タグ（カンマ区切り）</label>
+                <input type="text" id="edit_tags" name="tags" placeholder="仕事, プライベート など">
+            </div>
+            <div>
+                <label for="edit_reminder_type">リマインド設定</label>
+                <select id="edit_reminder_type" name="reminder_type" onchange="toggleEditReminderInput()">
+                    <option value="">リマインドなし</option>
+                    <option value="relative">相対時間（何時間何分後）</option>
+                    <option value="absolute">絶対時間（日時指定）</option>
+                </select>
+            </div>
+            <div id="edit_relative_reminder" style="display:none;">
+                <label>何時間何分後にリマインド</label>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <input type="number" id="edit_reminder_hours" min="0" max="168" value="1" style="width:80px;">
+                    <span>時間</span>
+                    <input type="number" id="edit_reminder_minutes" min="0" max="59" value="0" style="width:80px;">
+                    <span>分後</span>
+                </div>
+            </div>
+            <div id="edit_absolute_reminder" style="display:none;">
+                <label for="edit_reminder_date">リマインド日時</label>
+                <input type="datetime-local" id="edit_reminder_date">
+            </div>
+            <div class="filters-actions">
+                <button type="button" class="btn btn-outline" onclick="closeEditModal()">閉じる</button>
+                <button type="submit" class="btn">保存</button>
+            </div>
+        </form>
       </div>
     </div>
     
@@ -1047,9 +1112,9 @@ try {
             checkRemindersNow();
             scheduleAllReminders();
             highlightDueStatus();
-            // モーダル: Escで閉じる（検索/絞り込み・作成オプション）
+            // モーダル: Escで閉じる（検索/絞り込み・作成オプション・編集）
             document.addEventListener('keydown', function(e){
-                if (e.key === 'Escape') { closeFilters(); closeOptions(); }
+                if (e.key === 'Escape') { closeFilters(); closeOptions(); closeEditModal(); }
             });
             
             // フォーム送信時にリマインド日時を計算
@@ -1094,6 +1159,74 @@ try {
         function backdropCloseOptions(e){
             if (e.target && e.target.id === 'options-modal') closeOptions();
         }
+
+        // 編集モーダルの開閉・入力制御
+        function openEditModal(todo){
+            if (!todo) return;
+            // 必須
+            document.getElementById('edit_id').value = todo.id;
+            document.getElementById('edit_title').value = (todo.title || '').trim();
+            document.getElementById('edit_description').value = (todo.description || '');
+            // 優先度
+            document.getElementById('edit_priority').value = (todo.priority || 'medium');
+            // 締切
+            document.getElementById('edit_due_date').value = toInputValue(todo.due_date || '');
+            // タグ
+            document.getElementById('edit_tags').value = (todo.tags || '');
+            // リマインド
+            const typeSel = document.getElementById('edit_reminder_type');
+            const absInput = document.getElementById('edit_reminder_date');
+            if (todo.reminder_date) {
+                typeSel.value = 'absolute';
+                absInput.value = toInputValue(todo.reminder_date);
+            } else {
+                typeSel.value = '';
+                absInput.value = '';
+            }
+            toggleEditReminderInput();
+            document.getElementById('edit_calculated_reminder_date').value = '';
+            const modal = document.getElementById('edit-modal');
+            if (modal) modal.style.display = 'flex';
+        }
+        function closeEditModal(){
+            const modal = document.getElementById('edit-modal');
+            if (modal) modal.style.display = 'none';
+        }
+        function backdropCloseEdit(e){
+            if (e.target && e.target.id === 'edit-modal') closeEditModal();
+        }
+        function toggleEditReminderInput(){
+            const type = document.getElementById('edit_reminder_type').value;
+            document.getElementById('edit_relative_reminder').style.display = (type === 'relative') ? 'block' : 'none';
+            document.getElementById('edit_absolute_reminder').style.display = (type === 'absolute') ? 'block' : 'none';
+        }
+        function calculateEditReminderDate(){
+            const type = document.getElementById('edit_reminder_type').value;
+            const out = document.getElementById('edit_calculated_reminder_date');
+            if (type === 'relative') {
+                const h = parseInt(document.getElementById('edit_reminder_hours').value) || 0;
+                const m = parseInt(document.getElementById('edit_reminder_minutes').value) || 0;
+                const d = new Date(Date.now() + (h * 60 + m) * 60 * 1000);
+                out.value = formatLocalDateTime(d);
+            } else if (type === 'absolute') {
+                out.value = document.getElementById('edit_reminder_date').value || '';
+            } else {
+                out.value = '';
+            }
+        }
+        function toInputValue(s){
+            if (!s) return '';
+            const t = String(s).replace(' ', 'T');
+            return t.substring(0,16);
+        }
+        // 編集フォーム送信時にリマインド日時を計算
+        (function(){
+            const ef = document.getElementById('edit-form');
+            if (!ef) return;
+            ef.addEventListener('submit', function(){
+                calculateEditReminderDate();
+            });
+        })();
     </script>
 </body>
 </html>
