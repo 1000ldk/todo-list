@@ -7,9 +7,6 @@
 // データベース接続設定を読み込み
 require_once '../config/database.php';
 
-// セッション開始
-// session_start(); // セッション未使用のため無効化（デスクトップ専用・簡易化）
-
 // エラーメッセージ用の変数
 $error_message = '';
 $success_message = '';
